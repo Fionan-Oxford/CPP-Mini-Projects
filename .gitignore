@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+/.vscode
+/basics
+traffic_light/vc140.pdb
