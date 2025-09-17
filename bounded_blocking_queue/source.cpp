@@ -24,47 +24,45 @@ Notifications: Use notify_one when waking a single complementary waiter; notify_
 #include <condition_variable>
 #include <thread>
 #include <mutex>
+#include <iostream>
 
 
-template <class T> class BoundedBlockingQueue{
+template <class T>
+class BoundedBlockingQueue{
 public:
-    explicit BoundedBlockingQueue(std::size_t capacity): cap(capacity), buffer(capacity), head(0), tail(0), size_(0){
-        if(cap == 0){
-            throw std::invalid_argument("Capacity must be > 0 ")
+    explicit BoundedBlockingQueue(int capacity): cap(capacity), buffer(capacity), head(0), tail(0), size_(0), closed(false){
+        if(cap <= 0){
+            throw std::invalid_argument("Capacity must be > 0 ");
         }
     }
 
     void push(T item){
-
-        std::unique_lock<std::mutex> lock(mtx_);
         {
-            cv.wait([lock](){return size_ < cap;})
-            if(closed){
-                throw std::runtime_error("Cannot push from a closed queue")
-            }
-            current_tail = tail.load(std::memory_order_acquire);
-            buffer[current_tail] = item;
-            next_tail = (current_tail + 1) % cap;
-            head.store(next_tail, std::memory_order_release);
-            size_++;
+            std::unique_lock<std::mutex> lock(mtx_);
+            cv.wait(lock, [this](){return closed || size_ < cap;});
+            if(closed) throw std::runtime_error("Cannot push to a closed queue");
+            buffer[tail] = std::move(item);
+            int next_tail = (tail + 1) % cap;
+            tail = next_tail;
+            ++size_;
         }
+
         cv.notify_one();
     }
 
 
     void pop(T& out){
-        std::unique_lock<std::mutex> lock(mtx_);
         {
-            cv.wait([lock](){return size_ > 0;})
-            if(closed){
-                throw std::runtime_error("Cannot pop from a closed queue")
-            }
-            current_head = head.load(std::memory_order_acquire);
-            out = buffer[current_head];
-            next_head = (current_head + 1) % cap;
-            head.store(next_head, std::memory_order_release)
-            size_--;
+            std::unique_lock<std::mutex> lock(mtx_);
+            cv.wait(lock,[this](){return closed || size_ > 0;});
+            if(closed && size_ == 0) throw std::runtime_error("Cannot pop from a closed queue");
+
+            out = std::move(buffer[head]);
+            int next_head = (head + 1) % cap;
+            head = next_head;
+            --size_;
         }
+
         cv.notify_one();
     }
 
@@ -77,12 +75,27 @@ public:
 
 private:
     std::vector<T> buffer;
-    std::atomic<int> head;
-    std::atomic<int> tail;
-    std::atomic<size_t> size_;
-    size_t cap;
+    int head;
+    int tail;
+    int size_;
+    int cap;
     bool closed;
     std::mutex mtx_;
     std::condition_variable cv;
 
 };
+
+int main(){
+    BoundedBlockingQueue<int> bbq(3);
+    bbq.push(1);
+    bbq.push(2);
+    bbq.push(3);
+    int out;
+    bbq.pop(out);
+    std::cout << out << std::endl;
+    bbq.pop(out);
+    std::cout << out << std::endl;
+    bbq.pop(out);
+    std::cout << out << std::endl;
+    return 0;
+}
