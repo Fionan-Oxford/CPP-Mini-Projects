@@ -8,48 +8,44 @@
 #include <vector>
 #include <functional>
 #include <condition_variable>
-#include <chrono>
-#include <stdexcept>
-#include <type_traits>
 
 class ThreadPool {
 public:
-    ThreadPool(int numThreads) : stop(false){
-        for(int i = 0; i < numThreads; ++i){
-            workers.emplace_back([this](){
-                while(true){
-                    std::function<void()> task;{
+    ThreadPool(int numThreads) : stop(false) {
+        for (int i = 0; i < numThreads; ++i) {
+            workers.emplace_back([this]() {
+                while (true) {
+                    std::function<void()> task;
+                    {
                         std::unique_lock<std::mutex> lock(queueMutex);
-                        cv.wait(lock, [this](){return stop || !tasks.empty();});
+                        cv.wait(lock, [this]() { return stop || !tasks.empty(); });
 
-                        if (stop && tasks.empty()){
+                        if (stop && tasks.empty()) {
                             return;
                         }
 
                         task = std::move(tasks.front());
-                        tasks.pop();
-
+                        tasks.pop(); // Move the task and pop it
                     }
+
                     task();
                 }
             });
         }
     }
 
-    ~ThreadPool(){
+    ~ThreadPool() {
         stop = true;
         cv.notify_all();
 
-        for(auto& worker : workers){
+        for (auto& worker : workers) {
             worker.join();
         }
     }
 
-    //Enqueue
-    template <typename F, typename... Args>
-    auto enqueue(F&& f, Args&&... args)
-        -> std::future<std::invoke_result_t<F, Args...>>  // explicit return type helps
-    {
+    // Enqueue
+    template<typename F, typename... Args>
+    auto enqueue(F&& f, Args&&... args) {
         using return_type = std::invoke_result_t<F, Args...>;
 
         auto task = std::make_shared<std::packaged_task<return_type()>>(
@@ -57,20 +53,20 @@ public:
         );
 
         std::future<return_type> result = task->get_future();
+
         {
             std::unique_lock<std::mutex> lock(queueMutex);
 
-            if (stop){
-                throw std::runtime_error("Can't queue on a stopped thread");
+            if (stop) {
+                throw std::runtime_error("Can't enqueue on a stopped thread");  // ✅ FIXED
             }
 
-            tasks.emplace([task](){(*task)();});
+            tasks.emplace([task]() { (*task)(); });
         }
 
         cv.notify_one();
         return result;
     }
-
 
 private:
     std::vector<std::thread> workers;
@@ -80,15 +76,15 @@ private:
     std::atomic<bool> stop;
 };
 
-int main(){
-    ThreadPool pool(4);
+int main() {
+    ThreadPool pool(4); // Create a pool with 4 threads
 
-    auto future1 = pool.enqueue([](){
+    auto future1 = pool.enqueue([] {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         return std::string("Hello from the thread pool!");
     });
 
-    auto future2 = pool.enqueue([](int a, int b){
+    auto future2 = pool.enqueue([](int a, int b) {
         return a * b;
     }, 6, 7);
 
