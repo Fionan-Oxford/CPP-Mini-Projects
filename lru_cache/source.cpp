@@ -1,69 +1,44 @@
-#include <unordered_map>
-#include <list>
 #include <iostream>
+#include <list>
+#include <unordered_map>
+#include <utility>
+#include <stdexcept>
 
-/*
-For o(1) acess, I need to use an unordered map
-Key -> generates an iterator to the list
-the list is a s
-
-I need a list, with an iterator used to acess
-My data will take the form of a key and value. 
-
-
-
-*/
 
 class LRUCache{
-    private:
-        int capacity;
-
-        //List stores keys and values
-        std::list<std::pair<int, int>> cacheList;
-
-        //Map uses key to iterator
-        std::unordered_map<int, std::list<std::pair<int, int>>::iterator> cacheMap;
-
-    public:
-        LRUCache(int capacity): capacity(capacity){}
-
-        int get(int key){
-            //Key not found
-            if(cacheMap.find(key) == cacheMap.end()){
-                return -1;
-            }
-
-            //Move the accessed one to the front. 
-            auto it = cacheMap[key];
-            int value = it->second;
-
-            cacheList.erase(it);
-            cacheList.push_front({key, value});
-            cacheMap[key] = cacheList.begin();
-
-            return value;
+public:
+    LRUCache(size_t capacity): cap(capacity), size_(0) {
+        if(cap == 0){
+            throw std::runtime_error("Capacity cannot be 0!");
         }
+    }
 
-        void put(int key, int value){
-            if(cacheMap.find(key) != cacheMap.end()){
-                auto it = cacheMap[key];
-                cacheList.erase(it);
-                cacheList.push_front({key,value});
-                cacheMap[key] = cacheList.begin();
-                return;
-            }
-
-            //Doesn't already exist.
-            if(cacheList.size() == capacity){
-                auto lru = cacheList.back();
-                int lruKey = lru.first;
-
-                cacheList.pop_back();
-                cacheMap.erase(lruKey);
-            }
-
-            //Insert new key value pair. 
-            cacheList.push_front({key,value});
-            cacheMap[key] = cacheList.begin();
+    void push(int key, int value){
+        if(lru_map.find(key) != lru_map.end()){ //already exists
+            lru_list.emplace_front(key, value);
+            auto front = lru_list.begin();
+            lru_map[key] = front;
+            return;
         }
+        //Is new
+        if(cap >= size_){
+            auto least = lru_list.back();
+            lru_list.pop_back();
+            lru_map.erase(least.first);
+            size_--;
+        }
+        lru_list.emplace_front(key, value);
+            auto front = lru_list.begin();
+            lru_map[key] = front;
+            size_++;
+    }
+
+
+
+private:
+    using lru_type = std::list<std::pair<int, int>>;
+    lru_type lru_list;
+    std::unordered_map<int, lru_type::iterator> lru_map;
+    size_t size_;
+    size_t cap;
 };
